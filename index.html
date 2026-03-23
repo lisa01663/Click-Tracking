@@ -7,51 +7,66 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
-    <!-- Firebase 實時追蹤模組 (修復權限與全域掛載) -->
+    <!-- Firebase 模組 (已優化部署容錯) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, doc, setDoc, increment, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // 安全取得配置
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "" };
+        // --- A. 介面控制函數 (確保在任何錯誤前優先掛載，GitHub 才能點開視窗) ---
+        window.toggleWeChatModal = (show) => { document.getElementById('wechatModal').classList.toggle('active', show); };
+        window.toggleDashboard = (show) => { document.getElementById('adminDashboard').classList.toggle('active', show); };
+
+        // --- B. Firebase 配置區 ---
+        // 提示：若在 GitHub 部署，請將下方內容替換為您 Firebase Console 提供的實際 config 物件
+        let firebaseConfig = {
+  apiKey: "AIzaSyBbjZWFV7_P39CtUNUoKaBtq45XGDV6y7s",
+  authDomain: "semicon-de988.firebaseapp.com",
+  projectId: "semicon-de988",
+  storageBucket: "semicon-de988.firebasestorage.app",
+  messagingSenderId: "772103692214",
+  appId: "1:772103692214:web:ebaef53a512bb7ad122b17",
+  measurementId: "G-65PN101X62"
+}; 
+        try {
+            if (typeof __firebase_config !== 'undefined') {
+                firebaseConfig = JSON.parse(__firebase_config);
+            }
+        } catch (e) { console.warn("Using default config"); }
+
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'mirle-semicon-2026';
 
-        // 頁面流量記錄
+        // --- C. 數據處理邏輯 ---
         async function trackVisit() {
             if (!auth.currentUser) return;
             try {
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', 'analytics', 'page_views');
                 await setDoc(ref, { count: increment(1), last_visit: new Date().toISOString() }, { merge: true });
-            } catch (e) { console.error("Visit tracking failed", e); }
+            } catch (e) { console.warn("Tracking blocked"); }
         }
 
-        // 點擊事件追蹤 - 強制掛載到 window 以供 HTML onclick 呼叫
         window.logClick = async function(btnId) {
             if (!auth.currentUser) return;
             try {
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', 'analytics', 'clicks');
                 await setDoc(ref, { [btnId]: increment(1) }, { merge: true });
-            } catch (e) { console.error("Click tracking failed", e); }
+            } catch (e) { console.warn("Click log failed"); }
         };
 
-        // 數據監聽與 UI 更新
         window.initAnalyticsDashboard = () => {
-            const statusEl = document.getElementById('db-status');
             const updateEl = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+            const statusEl = document.getElementById('db-status');
 
-            // 監聽總流量
             onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'analytics', 'page_views'), (s) => {
                 if (s.exists()) {
                     updateEl('db-total-views', s.data().count || 0);
                     if(statusEl) statusEl.innerText = "已連線 (Connected)";
                 }
-            }, (e) => { if(statusEl) statusEl.innerText = "連線中/無權限"; });
+            }, (err) => { if(statusEl) statusEl.innerText = "尚未連線至 Firebase"; });
 
-            // 監聽詳細點擊
             onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'analytics', 'clicks'), (s) => {
                 if (s.exists()) {
                     const d = s.data();
@@ -65,56 +80,30 @@
             });
         };
 
-        // 彈窗與全域控制函數
-        window.toggleWeChatModal = (show) => { document.getElementById('wechatModal').classList.toggle('active', show); };
-        window.toggleDashboard = (show) => { document.getElementById('adminDashboard').classList.toggle('active', show); };
-
-        // 啟動驗證程序
         onAuthStateChanged(auth, (user) => {
-            if (user) {
-                trackVisit();
-                initAnalyticsDashboard();
-            }
+            if (user) { trackVisit(); initAnalyticsDashboard(); }
         });
 
         (async () => {
             try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (err) { console.error("Auth process failed", err); }
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
+                else await signInAnonymously(auth);
+            } catch (err) { console.warn("Auth failed, tracking inactive"); }
         })();
     </script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
-        :root {
-            --mirle-blue: #0056b3;
-            --mirle-deep: #020617;
-            --mirle-accent: #3b82f6;
-        }
+        :root { --mirle-blue: #0056b3; --mirle-deep: #020617; --mirle-accent: #3b82f6; }
         body { font-family: 'Noto Sans TC', sans-serif; scroll-behavior: smooth; }
         .mirle-dark-bg { background-color: var(--mirle-deep); }
-        
-        .hero-bg { 
-            background-image: linear-gradient(to bottom, rgba(2, 6, 23, 0.85), rgba(2, 6, 23, 0.95)), 
-                              url('https://raw.githubusercontent.com/lisa01663/TEST/refs/heads/main/cover1.jpg');
-            background-size: cover;
-            background-position: center;
-        }
-        
+        .hero-bg { background-image: linear-gradient(to bottom, rgba(2, 6, 23, 0.85), rgba(2, 6, 23, 0.95)), url('https://raw.githubusercontent.com/lisa01663/TEST/refs/heads/main/cover1.jpg'); background-size: cover; background-position: center; }
         .gradient-overlay { background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.15), transparent 50%); }
-        .card-hover:hover { transform: translateY(-5px); background-color: rgba(255, 255, 255, 0.05); transition: 0.3s ease; }
+        .card-hover:hover { transform: translateY(-5px); background-color: rgba(255, 255, 255, 0.05); transition: 0.3s; }
         .btn-mirle { background-color: var(--mirle-blue); color: white; transition: 0.2s; }
-        .btn-mirle:hover { background-color: #004494; filter: brightness(1.1); }
-        
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #020617; }
-        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+        .btn-mirle:hover { background-color: #004494; }
 
-        /* --- 修正框架跑版：強制 LOGO 尺寸 --- */
+        /* --- 修正框架跑版 --- */
         .partner-grid-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 2rem; }
         .partner-item { display: flex; flex-direction: column; align-items: center; width: 160px; text-align: center; }
         .partner-card { background-color: #f3f4f6; border: 1px solid rgba(255, 255, 255, 0.1); padding: 1rem; border-radius: 1rem; display: flex; align-items: center; justify-content: center; width: 100%; height: 100px; transition: 0.4s; position: relative; overflow: hidden; }
@@ -128,7 +117,7 @@
         .traffic-card:hover { border-color: var(--mirle-accent); transform: translateX(8px); }
 
         .social-sidebar { position: fixed; left: 1rem; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 0.75rem; z-index: 100; }
-        .social-icon-btn { width: 44px; height: 44px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.2); display: flex; align-items: center; justify-content: center; color: white; transition: 0.4s; cursor: pointer; }
+        .social-icon-btn { width: 44px; height: 44px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.2); display: flex; align-items: center; justify-content: center; color: white; cursor: pointer; transition: 0.4s; }
         .social-icon-btn.hover-youtube:hover { background: #FF0000; box-shadow: 0 0 20px rgba(255, 0, 0, 0.6); transform: scale(1.1) translateX(5px); }
         .social-icon-btn.hover-facebook:hover { background: #1877F2; box-shadow: 0 0 20px rgba(24, 119, 242, 0.6); transform: scale(1.1) translateX(5px); }
         .social-icon-btn.hover-linkedin:hover { background: #0A66C2; box-shadow: 0 0 20px rgba(10, 102, 194, 0.6); transform: scale(1.1) translateX(5px); }
@@ -138,6 +127,7 @@
         .modal-overlay.active { opacity: 1; pointer-events: auto; }
         .modal-content { background: #111827; padding: 4.5rem 2rem 3rem; border-radius: 2rem; border: 1px solid rgba(255, 255, 255, 0.1); position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 90%; width: 360px; transform: scale(0.9); transition: 0.3s; box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5); }
         .modal-overlay.active .modal-content { transform: scale(1); }
+        .close-btn { position: absolute; top: 1.25rem; right: 1.25rem; color: rgba(255, 255, 255, 0.5); cursor: pointer; }
         
         .badge-limited { background: linear-gradient(to right, #3b82f6, #0056b3); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px); }
         .stat-grid { display: grid; grid-template-cols: 1fr 1fr; gap: 1rem; width: 100%; }
@@ -152,7 +142,7 @@
 </head>
 <body class="mirle-dark-bg text-gray-200">
 
-    <!-- 懸浮社群 -->
+    <!-- 社群側欄 -->
     <aside class="social-sidebar">
         <a href="https://www.youtube.com/@mirlegroup" target="_blank" onclick="logClick('social_youtube')" class="social-icon-btn hover-youtube" title="YouTube"><i data-lucide="youtube" class="w-5 h-5"></i></a>
         <a href="https://www.facebook.com/mirlegroup" target="_blank" onclick="logClick('social_facebook')" class="social-icon-btn hover-facebook" title="Facebook"><i data-lucide="facebook" class="w-5 h-5"></i></a>
@@ -176,15 +166,16 @@
     <div id="adminDashboard" class="modal-overlay" onclick="toggleDashboard(false)">
         <div class="modal-content" onclick="event.stopPropagation()">
             <div class="close-btn absolute top-5 right-5" onclick="toggleDashboard(false)"><i data-lucide="x" class="w-6 h-6"></i></div>
-            <h4 class="text-white font-bold mb-4 text-xl text-center">實時行銷數據監測</h4>
-            <p id="db-status" class="text-emerald-400 text-[10px] mb-4 uppercase tracking-tighter">連線中...</p>
+            <h4 class="text-white font-bold mb-2 text-xl text-center">實時行銷數據監測</h4>
+            <p id="db-status" class="text-emerald-400 text-[10px] mb-4 uppercase tracking-tighter">檢查連線中...</p>
             <div class="stat-grid mb-4">
                 <div class="stat-card col-span-2"><div id="db-total-views" class="stat-value text-4xl text-emerald-400">0</div><div class="text-xs text-gray-500 mt-1">總訪問人次 (Traffic)</div></div>
                 <div class="stat-card"><div id="db-catalog" class="stat-value">0</div><div class="text-[10px] text-gray-500">型錄下載</div></div>
                 <div class="stat-card"><div id="db-wechat" class="stat-value">0</div><div class="text-[10px] text-gray-500">WeChat</div></div>
-                <div class="stat-card"><div id="db-foplp" class="stat-value text-blue-400">0</div><div class="text-[10px] text-gray-500">先進封裝分頁</div></div>
-                <div class="stat-card"><div id="db-ai" class="stat-value text-blue-400">0</div><div class="text-[10px] text-gray-500">AI 智造分頁</div></div>
+                <div class="stat-card"><div id="db-foplp" class="stat-value text-blue-400">0</div><div class="text-[10px] text-gray-500">先進封裝</div></div>
+                <div class="stat-card"><div id="db-ai" class="stat-value text-blue-400">0</div><div class="text-[10px] text-gray-500">AI 智造</div></div>
             </div>
+            <p class="text-gray-500 text-[9px] mt-2 italic">※ 此數據僅供盟立行銷內部參考</p>
         </div>
     </div>
 
@@ -206,7 +197,7 @@
                         <option value="en" class="bg-slate-900">EN</option>
                     </select>
                 </div>
-                <a href="https://www.mirle.com.tw/document-detail/0/Catalog/" target="_blank" onclick="logClick('catalog_download')" data-t-href="catalog_url" class="btn-mirle px-2.5 md:px-5 py-1.5 rounded-full md:text-sm font-bold flex items-center justify-center transition-all whitespace-nowrap" data-t="btn_download">型錄下載</a>
+                <a href="https://www.mirle.com.tw/document-detail/0/Catalog/" target="_blank" onclick="logClick('catalog_download')" data-t-href="catalog_url" class="btn-mirle px-3 py-1.5 rounded-full text-xs md:text-sm font-bold" data-t="btn_download">型錄下載</a>
             </div>
         </div>
     </nav>
@@ -216,14 +207,14 @@
         <div class="max-w-7xl mx-auto px-4 relative z-10">
             <div class="inline-block px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs mb-6" data-t="hero_location">台北南港展覽館一館4F</div>
             <h1 class="text-4xl md:text-7xl font-black mb-4 md:mb-6 leading-tight text-white px-2"><span data-t="hero_title_1">智造未來</span><br><span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600" data-t="hero_title_2">半導體整廠自動化</span></h1>
-            <p class="text-gray-400 max-w-4xl mx-auto mb-10 text-sm md:text-xl px-4" data-t="hero_desc">盟立集團將於SEMICON Taiwan 2026重磅展出創新的半導體 AI 智能自動化應用解決方案。</p>
-            <div class="inline-block mb-12 bg-white/5 backdrop-blur-sm border border-white/10 p-0.5 md:p-1 rounded-[2.5rem] overflow-hidden shadow-2xl">
+            <p class="text-gray-400 max-w-4xl mx-auto mb-10 text-sm md:text-xl px-4" data-t="hero_desc">盟立集團將於SEMICON Taiwan 2026重磅展出「智能製造再升級──AI智能自動化應用在半導體」為主軸的創新解決方案。</p>
+            <div class="inline-block mb-12 bg-white/5 backdrop-blur-sm border border-white/10 p-0.5 md:p-1 rounded-[2.5rem] overflow-hidden shadow-2xl mx-auto">
                 <div class="px-6 py-5 md:px-10 md:py-8">
                     <div class="flex justify-center gap-5 md:gap-12 mb-6">
-                        <div class="text-center"><span id="days" class="text-4xl md:text-5xl font-bold text-white block">--</span><span class="text-[10px] uppercase text-gray-500 tracking-widest mt-1" data-t="time_days">天數</span></div>
-                        <div class="text-center border-l border-white/10 pl-5 md:pl-12"><span id="hours" class="text-4xl md:text-5xl font-bold text-white block">--</span><span class="text-[10px] uppercase text-gray-500 tracking-widest mt-1" data-t="time_hours">時</span></div>
-                        <div class="text-center border-l border-white/10 pl-5 md:pl-12"><span id="mins" class="text-4xl md:text-5xl font-bold text-white block">--</span><span class="text-[10px] uppercase text-gray-500 tracking-widest mt-1" data-t="time_mins">分</span></div>
-                        <div class="text-center border-l border-white/10 pl-5 md:pl-12 text-blue-500"><span id="secs" class="text-4xl md:text-5xl font-bold block">--</span><span class="text-[10px] uppercase text-gray-500 tracking-widest mt-1" data-t="time_secs">秒</span></div>
+                        <div class="text-center"><span id="days" class="text-4xl md:text-5xl font-bold text-white block">--</span><span class="text-[10px] uppercase text-gray-500 mt-1" data-t="time_days">天數</span></div>
+                        <div class="text-center border-l border-white/10 pl-5 md:pl-12"><span id="hours" class="text-4xl md:text-5xl font-bold text-white block">--</span><span class="text-[10px] uppercase text-gray-500 mt-1" data-t="time_hours">時</span></div>
+                        <div class="text-center border-l border-white/10 pl-5 md:pl-12"><span id="mins" class="text-4xl md:text-5xl font-bold text-white block">--</span><span class="text-[10px] uppercase text-gray-500 mt-1" data-t="time_mins">分</span></div>
+                        <div class="text-center border-l border-white/10 pl-5 md:pl-12 text-blue-500"><span id="secs" class="text-4xl md:text-5xl font-bold block">--</span><span class="text-[10px] uppercase text-gray-500 mt-1" data-t="time_secs">秒</span></div>
                     </div>
                 </div>
             </div>
@@ -232,9 +223,10 @@
                 <a href="https://www.semicontaiwan.org/" target="_blank" onclick="logClick('expo_register')" class="border border-white/20 text-white px-8 py-4 rounded-xl font-bold hover:bg-white/5 transition flex items-center justify-center gap-2 text-base"><span data-t="btn_expo">大會觀展預約</span> <i data-lucide="external-link" class="w-4 h-4"></i></a>
             </div>
         </div>
+        <div class="absolute inset-0 gradient-overlay pointer-events-none"></div>
     </header>
 
-    <!-- 年度亮點 (完整恢復) -->
+    <!-- 年度亮點 (完整資訊還原) -->
     <section id="highlights" class="py-24 max-w-7xl mx-auto px-4 border-t border-white/5">
         <div class="flex flex-col md:flex-row justify-between items-center md:items-end mb-16 gap-6 text-center md:text-left">
             <div><h2 class="text-3xl font-bold mb-3 text-white" data-t="highlights_title">2026 年度展覽亮點</h2><p class="text-gray-500 text-base md:text-lg" data-t="highlights_subtitle">現場實機動態演示，親身體驗自動化技術</p></div>
@@ -245,32 +237,32 @@
                 <img src="https://www.mirle.com.tw/upload/news_list_pic/twL_news_26A22_dbwMAARPWB.jpg" class="w-full h-48 object-cover">
                 <div class="p-6">
                     <div class="text-orange-500 text-xs font-bold mb-3 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-orange-500 animate-ping"></span> LIVE: 每整點演示</div>
-                    <h3 class="text-xl font-bold mb-3 text-white" data-t="h1_title">人形機器人&巡檢機器狗</h3>
-                    <p class="text-sm md:text-base text-gray-400 leading-relaxed mb-6" data-t="h1_desc">具備自主導航與熱顯像感測，適用於無塵室環境監控與異音偵測。</p>
+                    <h3 class="text-xl font-bold mb-3 text-white">人形機器人&巡檢機器狗</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">具備自主導航與熱顯像感測，適用於無塵室環境監控與異音偵測。</p>
                 </div>
             </div>
             <div class="bg-white/5 p-0 rounded-3xl border border-white/10 card-hover overflow-hidden">
                 <img src="https://www.mirle.com.tw/upload/news_b/twL_news_25I18_uIzJjga6iC.png" class="w-full h-48 object-cover">
                 <div class="p-6">
                     <div class="bg-blue-500/20 text-blue-400 text-xs px-3 py-1 rounded-full inline-block font-bold mb-2">實機動態展示</div>
-                    <h3 class="text-xl font-bold mb-3 text-white" data-t="h2_title">FOPLP EFEM</h3>
-                    <p class="text-sm md:text-base text-gray-400 leading-relaxed mb-6" data-t="h2_desc">次世代高精度晶圓搬運機器人，專為先進封裝製程設計的抗震穩定技術。</p>
+                    <h3 class="text-xl font-bold mb-3 text-white">FOPLP EFEM</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">次世代高精度晶圓搬運機器人，專為先進封裝製程設計的抗震穩定技術。</p>
                 </div>
             </div>
             <div class="bg-white/5 p-0 rounded-3xl border border-white/10 card-hover overflow-hidden">
                 <img src="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=800" class="w-full h-48 object-cover">
                 <div class="p-6">
                     <div class="bg-purple-500/20 text-purple-400 text-xs px-3 py-1 rounded-full inline-block font-bold mb-2">軟體互動區</div>
-                    <h3 class="text-xl font-bold mb-3 text-white" data-t="h3_title">AI 維運平台</h3>
-                    <p class="text-sm md:text-base text-gray-400 leading-relaxed mb-6" data-t="h3_desc">透過大數據分析實現預測性維護，有效降低非計畫性停機時間達 40%。</p>
+                    <h3 class="text-xl font-bold mb-3 text-white">AI 維運平台</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">透過大數據分析實現預測性維護，有效降低非計畫性停機時間達 40%。</p>
                 </div>
             </div>
             <div class="bg-white/5 p-0 rounded-3xl border border-white/10 card-hover overflow-hidden">
                 <img src="https://www.mirle.com.tw/upload/news_b/twL_news_24D19_uqRelVmTy5.png" class="w-full h-48 object-cover">
                 <div class="p-6">
                     <div class="bg-emerald-500/20 text-emerald-400 text-xs px-3 py-1 rounded-full inline-block font-bold mb-2">核心組件展出</div>
-                    <h3 class="text-xl font-bold mb-3 text-white" data-t="h4_title">盟英減速機</h3>
-                    <p class="text-sm md:text-base text-gray-400 leading-relaxed mb-6" data-t="h4_desc">機器人關鍵零組件，MIT 自研高精度、高壽命運動控制核心。</p>
+                    <h3 class="text-xl font-bold mb-3 text-white">盟英減速機</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">機器人關鍵零組件，MIT 自研高精度、高壽命運動控制核心。</p>
                 </div>
             </div>
         </div>
@@ -287,13 +279,13 @@
             </div>
             <div class="bg-white/5 rounded-[3rem] p-10 md:p-16 border border-white/5 text-left grid md:grid-cols-2 gap-16 items-center shadow-3xl">
                 <div>
-                    <h3 id="sol-title" class="text-3xl font-bold mb-8 text-blue-400">Loading...</h3>
+                    <h3 id="sol-title" class="text-2xl md:text-3xl font-bold mb-8 text-blue-400">Loading...</h3>
                     <p id="sol-desc" class="text-gray-400 leading-relaxed mb-10 text-base md:text-lg">---</p>
                     <ul id="sol-list" class="space-y-5 text-sm md:text-base text-gray-300"></ul>
                     <div class="mt-12"><a id="sol-external-link" href="#" target="_blank" onclick="logClick('solution_video_ext')" class="inline-flex items-center gap-2 text-sm font-bold text-white hover:text-blue-400 transition group border-b border-white/20 pb-1">前往 YouTube 觀看影片 <i data-lucide="external-link" class="w-4 h-4"></i></a></div>
                 </div>
                 <div class="aspect-video-container" id="sol-media-container">
-                    <div id="video-placeholder" class="video-placeholder bg-slate-800 flex items-center justify-center cursor-pointer group" onclick="playVideo(); logClick('play_solution_video')">
+                    <div id="video-placeholder" class="video-placeholder flex items-center justify-center cursor-pointer group" onclick="playVideo(); logClick('play_solution_video')">
                         <img id="sol-thumb" src="" class="w-full h-full object-cover opacity-50 group-hover:scale-105 transition duration-500">
                         <div class="absolute w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center shadow-2xl"><i data-lucide="play" class="text-white fill-current w-10 h-10"></i></div>
                     </div>
@@ -303,7 +295,7 @@
         </div>
     </section>
 
-    <!-- 合展廠商 (修復跑版與 LOGO 尺寸) -->
+    <!-- 合展夥伴 (LOGO 尺寸鎖定修復) -->
     <section id="partners" class="py-24 text-center">
         <div class="max-w-7xl mx-auto px-4">
             <h2 class="text-3xl font-bold mb-16 tracking-widest uppercase text-white" data-t="partners_title">盟立集團合展夥伴</h2>
@@ -318,72 +310,65 @@
     </section>
 
     <!-- 參展資訊與交通 -->
-    <section id="info" class="py-24 max-w-7xl mx-auto px-4 text-center">
+    <section id="info" class="py-24 max-w-7xl mx-auto px-4 text-center text-white">
         <div class="glow-divider mb-12"></div>
-        <h2 class="text-4xl font-bold mb-16 text-white text-center" data-t="info_boothtitle">盟立參展資訊</h2>
+        <h2 class="text-4xl font-bold mb-16 text-center" data-t="info_boothtitle">盟立參展資訊</h2>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-20 text-left px-4 md:px-0">
             <div class="bg-white/5 rounded-[2.5rem] border border-white/10 p-10 flex flex-col justify-center gap-8 shadow-xl">
-                <div class="flex gap-6 items-center"><div class="w-14 h-14 bg-blue-600/20 text-blue-500 rounded-2xl flex items-center justify-center shrink-0"><i data-lucide="map-pin" class="w-7 h-7"></i></div><div><p class="font-bold text-xl text-white" data-t="info_location_name">台北南港展覽館一館4F</p><p class="text-gray-500 text-sm md:text-base">115 台北市南港區經貿二路 1 號</p></div></div>
-                <div class="flex gap-6 items-center"><div class="w-14 h-14 bg-blue-600/20 text-blue-500 rounded-2xl flex items-center justify-center shrink-0"><i data-lucide="calendar" class="w-7 h-7"></i></div><div><p class="font-bold text-xl text-white">2026/09/02 - 09/04</p><p class="text-gray-500 text-sm md:text-base">10:00 AM - 05:00 PM</p></div></div>
-                <div class="flex gap-6 items-center"><div class="w-14 h-14 bg-blue-600/20 text-blue-500 rounded-2xl flex items-center justify-center shrink-0"><i data-lucide="info" class="w-7 h-7"></i></div><div><p class="font-bold text-xl text-white" data-t="info_booth">攤位編號：N0676</p><p class="text-gray-500 text-sm md:text-base">歡迎蒞臨盟立集團攤位參觀！</p></div></div>
+                <div class="flex gap-6 items-center"><div class="w-14 h-14 bg-blue-600/20 text-blue-500 rounded-2xl flex items-center justify-center shrink-0"><i data-lucide="map-pin" class="w-7 h-7"></i></div><div><p class="font-bold text-xl">台北南港展覽館一館4F</p><p class="text-gray-500 text-sm md:text-base">115 台北市南港區經貿二路 1 號</p></div></div>
+                <div class="flex gap-6 items-center"><div class="w-14 h-14 bg-blue-600/20 text-blue-500 rounded-2xl flex items-center justify-center shrink-0"><i data-lucide="calendar" class="w-7 h-7"></i></div><div><p class="font-bold text-xl">2026/09/02 - 09/04</p><p class="text-gray-500 text-sm md:text-base">10:00 AM - 05:00 PM</p></div></div>
+                <div class="flex gap-6 items-center"><div class="w-14 h-14 bg-blue-600/20 text-blue-500 rounded-2xl flex items-center justify-center shrink-0"><i data-lucide="info" class="w-7 h-7"></i></div><div><p class="font-bold text-xl">攤位編號：N0676</p><p class="text-gray-500 text-sm md:text-base">歡迎蒞臨盟立集團攤位參觀！</p></div></div>
             </div>
-            <div class="relative overflow-hidden rounded-[2.5rem] border border-white/10 shadow-2xl min-h-[300px]">
-                <img src="https://raw.githubusercontent.com/lisa01663/TEST/refs/heads/main/2025%20%E5%8D%8A%E5%B0%8E%E9%AB%94%E5%B1%95_%E7%9B%9F%E7%AB%8B%E9%9B%86%E5%9C%98.jpg" alt="Render" class="w-full h-full object-cover opacity-80" style="aspect-ratio: 16/9; object-fit: cover;">
-                <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-            </div>
+            <div class="relative overflow-hidden rounded-[2.5rem] border border-white/10 shadow-2xl min-h-[300px]"><img src="https://raw.githubusercontent.com/lisa01663/TEST/refs/heads/main/2025%20%E5%8D%8A%E5%B0%8E%E9%AB%94%E5%B1%95_%E7%9B%9F%E7%AB%8B%E9%9B%86%E5%9C%98.jpg" alt="Exhibition Hall" class="w-full h-full object-cover opacity-80" style="aspect-ratio: 16/9; object-fit: cover;"></div>
         </div>
 
         <div class="glow-divider my-20"></div>
-        <h3 class="text-3xl font-bold mb-12 text-white text-center" data-t="info_title">南港展覽館 展館交通指南</h3>
+        <h3 class="text-3xl font-bold mb-12 text-center" data-t="info_title">南港展覽館 展館交通指南</h3>
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start text-left mb-20 px-4 md:px-0">
             <div class="lg:col-span-5 rounded-[2rem] overflow-hidden border border-white/10 h-[400px] shadow-2xl relative group w-full">
                 <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3614.3357559744877!2d121.61553561041396!3d25.05660673728927!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3442ab57f02092dd%3A0x87862fa2121f7e46!2z5Y-w5YyX5Y2X5riv5bGV6Ka96aSoMemkqA!5e0!3m2!1szh-TW!2stw!4v1773716785464" width="100%" height="100%" style="border:0;" allowfullscreen="" loading="lazy"></iframe>
-                <div class="absolute bottom-4 left-4 right-4 bg-black/60 backdrop-blur-md p-4 rounded-xl border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <p class="text-xs text-blue-300 font-mono mb-1 text-center" data-t="info_map_label">LOCATION</p>
-                    <p class="text-white text-sm font-bold text-center" data-t="info_map_name">台北南港展覽館 1 館</p>
-                </div>
             </div>
             <div class="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="traffic-card p-6 rounded-2xl border flex flex-col gap-4">
-                    <div class="flex items-center gap-3"><i data-lucide="train" class="w-6 h-6 text-blue-400"></i><h5 class="font-bold text-white text-lg">捷運 (MRT)</h5></div>
+                    <h5 class="font-bold text-white text-lg flex items-center gap-3"><i data-lucide="train" class="w-6 h-6 text-blue-400"></i>捷運 (MRT)</h5>
                     <p class="text-gray-400 text-sm md:text-base leading-relaxed">搭乘 板南線 或 文湖線 至「南港展覽館站」，1 號出口步行 3 分鐘即可抵達一館。</p>
                 </div>
                 <div class="traffic-card p-6 rounded-2xl border flex flex-col gap-4">
-                    <div class="flex items-center gap-3"><i data-lucide="navigation" class="w-6 h-6 text-blue-400"></i><h5 class="font-bold text-white text-lg">高鐵/台鐵</h5></div>
+                    <h5 class="font-bold text-white text-lg flex items-center gap-3"><i data-lucide="navigation" class="w-6 h-6 text-blue-400"></i>高鐵/台鐵</h5>
                     <p class="text-gray-400 text-sm md:text-base leading-relaxed">至「南港站」後，轉乘捷運板南線往展覽館方向，僅需 1 站即可抵達。</p>
                 </div>
                 <div class="traffic-card p-6 rounded-2xl border flex flex-col gap-4">
-                    <div class="flex items-center gap-3"><i data-lucide="bus" class="w-6 h-6 text-blue-400"></i><h5 class="font-bold text-white text-lg">公車 & 接駁</h5></div>
-                    <p class="text-gray-400 text-sm md:text-base leading-relaxed" data-t="info_bus_desc">直達展館門口，展期提供免費接駁，<a href="https://www.semicontaiwan.org/zh/shuttlebus" target="_blank" onclick="logClick('bus_details')" class="text-blue-400 underline font-bold">詳細辦法</a>。</p>
+                    <h5 class="font-bold text-white text-lg flex items-center gap-3"><i data-lucide="bus" class="text-blue-400"></i>公車 & 接駁</h5>
+                    <p class="text-gray-400 text-sm md:text-base leading-relaxed" data-t="info_bus_desc">直達展館門口，展期大會提供免費接駁，<a href="https://www.semicontaiwan.org/zh/shuttlebus" target="_blank" onclick="logClick('bus_details')" class="text-blue-400 underline font-bold">詳細辦法</a>。</p>
                 </div>
-                <div class="traffic-card p-6 rounded-2xl border flex flex-col gap-4">
-                    <div class="flex items-center gap-3"><i data-lucide="car" class="w-6 h-6 text-blue-400"></i><h5 class="font-bold text-white text-lg">自行開車</h5></div>
-                    <div class="text-gray-400 text-[10px] md:text-xs leading-relaxed space-y-2 text-left" data-t="info_driving_desc">
-                        <p><strong class="text-blue-300">國道 1 號：</strong> 由東湖或內湖交流道下即可抵達。</p>
-                        <p><strong class="text-blue-300">國道 3 號：</strong> 由新台五路交流道下即可抵達。展館提供 800 個車位。</p>
+                <div class="traffic-card p-6 rounded-2xl border flex flex-col gap-4 text-xs">
+                    <h5 class="font-bold text-white text-lg flex items-center gap-3"><i data-lucide="car" class="text-blue-400"></i>自行開車</h5>
+                    <div class="text-gray-400 space-y-2 text-left" data-t="info_driving_desc">
+                        <p><strong class="text-blue-300">國道 1 號：</strong> 由東湖或內湖交流道下，接康寧路/成功路 → 南港。</p>
+                        <p><strong class="text-blue-300">國道 3 號：</strong> 由新台五路交流道下 → 南港。提供 800 個車位。</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 展場活動 -->
+        <!-- 展場活動區塊 -->
         <div class="event-card group p-8 md:p-14 rounded-[3.5rem] flex flex-col md:flex-row gap-12 items-center w-full text-left shadow-inner mx-auto max-w-6xl mt-20">
-            <div class="w-full md:w-1/3 shrink-0 relative">
+            <div class="md:w-1/3 shrink-0 relative">
                 <div class="gift-shine aspect-square bg-slate-900 border border-white/10 shadow-2xl card-hover w-full relative overflow-hidden rounded-[2rem]">
                     <img src="https://raw.githubusercontent.com/lisa01663/TEST/refs/heads/main/Gift1.jpg" alt="Gift" class="w-full h-full object-cover group-hover:scale-110 transition-all duration-700">
                     <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-full px-4 flex justify-center">
-                        <span class="badge-limited text-xs md:text-sm text-white font-bold px-5 py-2 rounded-full whitespace-nowrap">數量有限，送完為止</span>
+                        <span class="badge-limited text-sm md:text-base text-white font-bold px-5 py-2 rounded-full whitespace-nowrap">數量有限，送完為止</span>
                     </div>
                 </div>
             </div>
             <div class="flex-1 relative z-10 text-center md:text-left">
-                <div class="inline-flex items-center gap-2 mb-6 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-bold tracking-widest"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Semicon 展會限定</div>
+                <div class="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-bold tracking-widest"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Semicon 展會限定</div>
                 <h4 class="font-bold text-white mb-6 text-3xl md:text-4xl leading-tight" data-t="promo_title">9/02-9/04 展會限定禮</h4>
-                <p class="text-gray-400 text-base md:text-xl leading-relaxed mb-10 max-w-2xl">於展會期間參觀盟立展位，完成問卷答題獲得限量<span class="text-blue-400 font-bold">「盟立品牌旅行盥洗包」</span>！</p>
+                <p class="text-gray-400 text-lg leading-relaxed mb-10 max-w-2xl">於展會期間參觀盟立展位，完成問卷答題獲得限量<span class="text-blue-400 font-bold">「盟立品牌旅行盥洗包」</span>！</p>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                    <div class="flex items-center gap-4 bg-white/5 p-5 rounded-2xl border border-white/5" onclick="logClick('event_step1')"><div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white shrink-0">1</div><span class="text-sm md:text-base text-gray-300 font-medium" data-t="step_1">參觀攤位</span></div>
-                    <div class="flex items-center gap-4 bg-white/5 p-5 rounded-2xl border border-white/5" onclick="logClick('event_step2')"><div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white shrink-0">2</div><span class="text-sm md:text-base text-gray-300 font-medium" data-t="step_2">掃描問卷</span></div>
-                    <div class="flex items-center gap-4 bg-white/5 p-5 rounded-2xl border border-white/5" onclick="logClick('event_step3')"><div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white shrink-0">3</div><span class="text-sm text-gray-300 font-medium" data-t="step_3">領取好禮</span></div>
+                    <div class="flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/5" onclick="logClick('event_step1')"><div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white shrink-0">1</div><span class="text-sm text-gray-300 font-medium" data-t="step_1">參觀攤位</span></div>
+                    <div class="flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/5" onclick="logClick('event_step2')"><div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white shrink-0">2</div><span class="text-sm text-gray-300 font-medium" data-t="step_2">掃描問卷</span></div>
+                    <div class="flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/5" onclick="logClick('event_step3')"><div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white shrink-0">3</div><span class="text-sm text-gray-300 font-medium" data-t="step_3">領取限量好禮</span></div>
                 </div>
             </div>
         </div>
@@ -407,15 +392,14 @@
                 sol_main_title: "全方位技術解決方案", tab_foplp: "先進封裝", tab_ai: "AI 智造", tab_robot: "機器人技術",
                 info_boothtitle: "盟立參展資訊", info_title: "南港展覽館 展館交通指南",
                 wechat_modal_title: "關注盟立集團 WeChat", wechat_modal_desc: "掃描 QR Code 獲取最新資訊",
-                info_bus_desc: "直達展館門口，展期大會提供免費接駁，<a href='https://www.semicontaiwan.org/zh/shuttlebus' target='_blank' class='text-blue-400 underline font-bold'>詳細辦法</a>。",
+                info_bus_desc: "直達展館門口，展期大會提供免費接駁，<a href='#' class='text-blue-400 underline font-bold'>詳細辦法</a>。",
                 info_driving_desc: "<p><strong class='text-blue-300'>國道 1 號：</strong> 由東湖或內湖交流道下 → 南港。</p><p><strong class='text-blue-300'>國道 3 號：</strong> 由新台五路交流道下 → 南港。</p>",
                 step_1: "參觀盟立攤位", step_2: "掃描問卷連結", step_3: "領取限量好禮"
             },
             en: {
                 nav_highlights: "Highlights", nav_solutions: "Solutions", nav_partners: "Partners", nav_info: "Expo Info", btn_download: "Catalog",
                 logo_img: "https://www.mirle.com.tw/en/images/logo.png", catalog_url: "https://www.mirle.com.tw/download/0/M2026_EN/",
-                hero_location: "TaiNEX 1, 4F", hero_title_1: "Smart Future", hero_title_2: "Semiconductor Automation",
-                hero_desc: "Mirle showcases innovation solutions at SEMICON Taiwan 2026.",
+                hero_location: "TaiNEX 1, 4F", hero_title_1: "Smart Future", hero_title_2: "Semiconductor Automation", hero_desc: "Mirle showcases innovation solutions at SEMICON Taiwan 2026.",
                 time_days: "Days", time_hours: "Hrs", time_mins: "Mins", time_secs: "Secs", btn_calendar: "Add Cal", btn_expo: "Register",
                 highlights_title: "2026 Exhibition Highlights", highlights_subtitle: "Live demonstrations of technologies",
                 sol_main_title: "Integrated Solutions", tab_foplp: "Adv. Pkg", tab_ai: "AI Mfg", tab_robot: "Robotics",
@@ -431,7 +415,10 @@
         function switchLanguage(l) {
             currentLang = l;
             const dict = translations[l];
-            document.querySelectorAll('[data-t]').forEach(el => { if (dict[el.getAttribute('data-t')]) el.innerHTML = dict[el.getAttribute('data-t')]; });
+            document.querySelectorAll('[data-t]').forEach(el => { 
+                const key = el.getAttribute('data-t');
+                if (dict[key]) el.innerHTML = dict[key]; 
+            });
             document.querySelectorAll('[data-t-src]').forEach(el => { el.src = dict[el.getAttribute('data-t-src')]; });
             document.querySelectorAll('[data-t-href]').forEach(el => { el.href = dict[el.getAttribute('data-t-href')]; });
             switchTab('foplp');
