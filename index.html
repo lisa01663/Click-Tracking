@@ -7,53 +7,63 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
-    <!-- Firebase 實時追蹤代碼模組 -->
+    <!-- Firebase 實時追蹤代碼模組 (修正權限與路徑) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, doc, setDoc, increment, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // 1. 初始化環境
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'mirle-semicon-2026';
 
-        // 2. 數據記錄功能
+        // 追蹤總訪問量 - 遵循規範路徑
         async function trackVisit() {
             if (!auth.currentUser) return;
-            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'activity', 'page_views');
-            await setDoc(ref, { count: increment(1), last_visit: new Date().toISOString() }, { merge: true });
+            try {
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'analytics', 'page_views');
+                await setDoc(ref, { count: increment(1), last_visit: new Date().toISOString() }, { merge: true });
+            } catch (e) { console.error("Permission denied on visit track"); }
         }
 
+        // 點擊事件追蹤
         window.logClick = async function(btnId) {
             if (!auth.currentUser) return;
-            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'activity', 'clicks');
-            await setDoc(ref, { [btnId]: increment(1) }, { merge: true });
+            try {
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'analytics', 'clicks');
+                await setDoc(ref, { [btnId]: increment(1) }, { merge: true });
+            } catch (e) { console.error("Permission denied on click track"); }
         };
 
-        // 3. 儀表板數據監聽
+        // 數據監聽
         window.initAnalyticsDashboard = () => {
-            const updateVal = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
-            onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'activity', 'page_views'), (s) => {
-                if (s.exists()) updateVal('db-total-views', s.data().count || 0);
-            });
-            onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'activity', 'clicks'), (s) => {
+            const updateEl = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+            // 初始化顯示 0
+            ['db-total-views', 'db-catalog', 'db-wechat', 'db-youtube', 'db-foplp', 'db-ai', 'db-robot'].forEach(id => updateEl(id, '0'));
+
+            onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'analytics', 'page_views'), (s) => {
+                if (s.exists()) updateEl('db-total-views', s.data().count || 0);
+            }, (e) => console.log("Dashboard view auth pending..."));
+
+            onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'analytics', 'clicks'), (s) => {
                 if (s.exists()) {
                     const d = s.data();
-                    updateVal('db-catalog', d.catalog_download || 0);
-                    updateVal('db-wechat', d.social_wechat || 0);
-                    updateVal('db-youtube', d.social_youtube || 0);
-                    updateVal('db-foplp', d.tab_foplp || 0);
-                    updateVal('db-ai', d.tab_ai || 0);
-                    updateVal('db-robot', d.tab_robot || 0);
+                    updateEl('db-catalog', d.catalog_download || 0);
+                    updateEl('db-wechat', d.social_wechat || 0);
+                    updateEl('db-youtube', d.social_youtube || 0);
+                    updateEl('db-foplp', d.tab_foplp || 0);
+                    updateEl('db-ai', d.tab_ai || 0);
+                    updateEl('db-robot', d.tab_robot || 0);
                 }
-            });
+            }, (e) => console.log("Dashboard click auth pending..."));
         };
 
-        // 4. 啟動驗證
-        onAuthStateChanged(auth, (user) => { if (user) { trackVisit(); initAnalyticsDashboard(); } });
+        onAuthStateChanged(auth, (user) => {
+            if (user) { trackVisit(); initAnalyticsDashboard(); }
+        });
+
         (async () => {
             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
             else await signInAnonymously(auth);
@@ -65,47 +75,38 @@
         :root { --mirle-blue: #0056b3; --mirle-deep: #020617; --mirle-accent: #3b82f6; }
         body { font-family: 'Noto Sans TC', sans-serif; scroll-behavior: smooth; }
         .mirle-dark-bg { background-color: var(--mirle-deep); }
-        .hero-bg { background-image: linear-gradient(to bottom, rgba(2, 6, 23, 0.85), rgba(2, 6, 23, 0.98)), url('https://raw.githubusercontent.com/lisa01663/TEST/refs/heads/main/cover1.jpg'); background-size: cover; background-position: center; }
+        .hero-bg { background-image: linear-gradient(to bottom, rgba(2, 6, 23, 0.8), rgba(2, 6, 23, 0.95)), url('https://raw.githubusercontent.com/lisa01663/TEST/refs/heads/main/cover1.jpg'); background-size: cover; background-position: center; }
+        .gradient-overlay { background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.15), transparent 50%); }
         .card-hover:hover { transform: translateY(-5px); background-color: rgba(255, 255, 255, 0.05); transition: 0.3s ease; }
         .btn-mirle { background-color: var(--mirle-blue); color: white; transition: 0.2s; }
         .btn-mirle:hover { background-color: #004494; }
-        
-        /* 修正 VS Code 報錯：使用標準 CSS 媒體查詢 */
-        .partner-item { display: flex; flex-direction: column; align-items: center; width: 150px; }
-        @media (min-width: 768px) { .partner-item { width: 180px; } }
-        
-        .partner-card { background-color: #f3f4f6; border: 1px solid rgba(255, 255, 255, 0.1); padding: 0.75rem; border-radius: 1rem; display: flex; align-items: center; justify-content: center; width: 100%; height: 90px; transition: 0.4s; position: relative; }
-        @media (min-width: 768px) { .partner-card { height: 100px; } }
-
         .glow-divider { width: 100%; height: 2px; background-image: linear-gradient(to right, transparent 0%, var(--mirle-accent) 50%, transparent 100%); box-shadow: 0 0 10px rgba(59, 130, 246, 0.8); opacity: 0.8; margin: 1.5rem 0; display: block; }
         .traffic-card { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); transition: 0.3s; height: 100%; }
-        .traffic-card:hover { border-color: var(--mirle-accent); transform: translateX(8px); }
-
-        /* 社群側欄與專屬 Hover 顏色 */
+        .traffic-card:hover { border-color: rgba(59, 130, 246, 0.4); transform: translateX(8px); }
         .social-sidebar { position: fixed; left: 1rem; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 0.75rem; z-index: 100; }
         .social-icon-btn { width: 44px; height: 44px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.2); display: flex; align-items: center; justify-content: center; color: white; transition: 0.4s; cursor: pointer; }
         .social-icon-btn.hover-youtube:hover { background: #FF0000; box-shadow: 0 0 20px rgba(255, 0, 0, 0.6); transform: scale(1.1) translateX(5px); }
         .social-icon-btn.hover-facebook:hover { background: #1877F2; box-shadow: 0 0 20px rgba(24, 119, 242, 0.6); transform: scale(1.1) translateX(5px); }
         .social-icon-btn.hover-linkedin:hover { background: #0A66C2; box-shadow: 0 0 20px rgba(10, 102, 194, 0.6); transform: scale(1.1) translateX(5px); }
         .social-icon-btn.hover-wechat:hover { background: #07C160; box-shadow: 0 0 20px rgba(7, 193, 96, 0.6); transform: scale(1.1) translateX(5px); }
-
-        /* 彈窗樣式 */
         .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 200; opacity: 0; pointer-events: none; transition: 0.3s; }
         .modal-overlay.active { opacity: 1; pointer-events: auto; }
         .modal-content { background: #111827; padding: 4.5rem 2rem 3rem; border-radius: 2rem; border: 1px solid rgba(255, 255, 255, 0.1); position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 90%; width: 360px; transform: scale(0.9); transition: 0.3s; box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5); }
         .modal-overlay.active .modal-content { transform: scale(1); }
-
+        .close-btn { position: absolute; top: 1.25rem; right: 1.25rem; color: rgba(255, 255, 255, 0.5); cursor: pointer; }
+        .badge-limited { background: linear-gradient(to right, #3b82f6, #0056b3); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px); }
         .stat-grid { display: grid; grid-template-cols: 1fr 1fr; gap: 1rem; width: 100%; }
         .stat-card { background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); }
         .stat-value { font-size: 1.5rem; font-weight: 700; color: #3b82f6; }
-
-        .nav-logo-responsive { filter: brightness(0) invert(1); height: 26px; }
+        .nav-logo-responsive { filter: brightness(0) invert(1); height: 30px; }
         @media (min-width: 1024px) { .nav-logo-responsive { position: relative; height: 30px; left: -60px; } }
+        .aspect-video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; background: #000; border-radius: 1.5rem; width: 100%; }
+        .aspect-video-container iframe, .aspect-video-container .video-placeholder { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 1.5rem; }
     </style>
 </head>
 <body class="mirle-dark-bg text-gray-200">
 
-    <!-- 側邊欄 -->
+    <!-- 懸浮社群 -->
     <aside class="social-sidebar">
         <a href="https://www.youtube.com/@mirlegroup" target="_blank" onclick="logClick('social_youtube')" class="social-icon-btn hover-youtube" title="YouTube"><i data-lucide="youtube" class="w-5 h-5"></i></a>
         <a href="https://www.facebook.com/mirlegroup" target="_blank" onclick="logClick('social_facebook')" class="social-icon-btn hover-facebook" title="Facebook"><i data-lucide="facebook" class="w-5 h-5"></i></a>
@@ -113,31 +114,31 @@
         <div onclick="toggleWeChatModal(true); logClick('social_wechat')" class="social-icon-btn hover-wechat" title="WeChat"><i data-lucide="message-circle" class="w-5 h-5"></i></div>
     </aside>
 
-    <!-- WeChat Modal (置中優化) -->
+    <!-- WeChat Modal -->
     <div id="wechatModal" class="modal-overlay" onclick="toggleWeChatModal(false)">
         <div class="modal-content" onclick="event.stopPropagation()">
-            <div class="close-btn absolute top-5 right-5 cursor-pointer" onclick="toggleWeChatModal(false)"><i data-lucide="x" class="w-6 h-6"></i></div>
+            <div class="close-btn" onclick="toggleWeChatModal(false)"><i data-lucide="x" class="w-6 h-6"></i></div>
             <h4 class="text-white font-bold mb-6 text-xl text-center" data-t="wechat_modal_title">關注盟立集團 WeChat</h4>
-            <div class="bg-white p-4 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-2xl">
-                <img src="https://www.mirle.com.tw/upload/data_socialmedia_wechat_qrcode/twL_01ns_web_base_22I05_eCP4Mu9ZEW.png" alt="WeChat" class="w-64 h-64">
-            </div>
-            <p class="text-gray-400 text-sm text-center" data-t="wechat_modal_desc">掃描 QR Code 獲取最新資訊</p>
+            <div class="bg-white p-4 rounded-2xl flex items-center justify-center mb-6 shadow-2xl mx-auto"><img src="https://www.mirle.com.tw/upload/data_socialmedia_wechat_qrcode/twL_01ns_web_base_22I05_eCP4Mu9ZEW.png" alt="WeChat" class="w-64 h-64 object-contain"></div>
+            <p class="text-gray-400 text-sm text-center" data-t="wechat_modal_desc">掃描 QR Code 獲取最新半導體自動化資訊</p>
         </div>
     </div>
 
     <!-- Admin Dashboard Modal -->
     <div id="adminDashboard" class="modal-overlay" onclick="toggleDashboard(false)">
         <div class="modal-content" onclick="event.stopPropagation()">
-            <div class="close-btn absolute top-5 right-5 cursor-pointer" onclick="toggleDashboard(false)"><i data-lucide="x" class="w-6 h-6"></i></div>
+            <div class="close-btn" onclick="toggleDashboard(false)"><i data-lucide="x" class="w-6 h-6"></i></div>
             <h4 class="text-white font-bold mb-6 text-xl text-center">實時行銷數據監測</h4>
             <div class="stat-grid mb-4">
                 <div class="stat-card col-span-2"><div id="db-total-views" class="stat-value text-4xl text-emerald-400">0</div><div class="text-xs text-gray-500 mt-1">總訪問人次 (Traffic)</div></div>
                 <div class="stat-card"><div id="db-catalog" class="stat-value">0</div><div class="text-[10px] text-gray-500">型錄下載</div></div>
                 <div class="stat-card"><div id="db-wechat" class="stat-value">0</div><div class="text-[10px] text-gray-500">WeChat</div></div>
-                <div class="stat-card"><div id="db-foplp" class="stat-value text-blue-400">0</div><div class="text-[10px] text-gray-500">先進封裝分頁</div></div>
-                <div class="stat-card"><div id="db-ai" class="stat-value text-blue-400">0</div><div class="text-[10px] text-gray-500">AI 智造分頁</div></div>
+                <div class="stat-card"><div id="db-youtube" class="stat-value">0</div><div class="text-[10px] text-gray-500">YouTube</div></div>
+                <div class="stat-card"><div id="db-foplp" class="stat-value text-blue-400">0</div><div class="text-[10px] text-gray-500">先進封裝</div></div>
+                <div class="stat-card"><div id="db-ai" class="stat-value text-blue-400">0</div><div class="text-[10px] text-gray-500">AI 智造</div></div>
+                <div class="stat-card"><div id="db-robot" class="stat-value text-blue-400">0</div><div class="text-[10px] text-gray-500">機器人</div></div>
             </div>
-            <p class="text-gray-500 text-[10px] tracking-widest mt-2 uppercase">Firebase Syncing...</p>
+            <p class="text-gray-500 text-[10px] tracking-widest mt-2 uppercase">Firebase Real-time Syncing</p>
         </div>
     </div>
 
@@ -159,43 +160,67 @@
                         <option value="en" class="bg-slate-900">EN</option>
                     </select>
                 </div>
-                <a href="https://www.mirle.com.tw/document-detail/0/Catalog/" target="_blank" onclick="logClick('catalog_download')" data-t-href="catalog_url" class="btn-mirle px-3 py-1.5 rounded-full text-xs md:text-sm font-bold" data-t="btn_download">型錄下載</a>
+                <a href="https://www.mirle.com.tw/document-detail/0/Catalog/" target="_blank" onclick="logClick('catalog_download')" data-t-href="catalog_url" class="btn-mirle px-2.5 md:px-5 py-1.5 rounded-full md:text-sm font-bold flex items-center justify-center transition-all" data-t="btn_download">型錄下載</a>
             </div>
         </div>
     </nav>
 
     <!-- Hero -->
-    <header class="pt-32 pb-24 hero-bg text-center">
+    <header class="relative pt-32 pb-24 hero-bg overflow-hidden text-center">
         <div class="max-w-7xl mx-auto px-4 relative z-10">
             <div class="inline-block px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs mb-6" data-t="hero_location">台北南港展覽館一館4F</div>
-            <h1 class="text-4xl md:text-7xl font-black mb-4 leading-tight text-white px-2"><span data-t="hero_title_1">智造未來</span><br><span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600" data-t="hero_title_2">半導體整廠自動化</span></h1>
-            <p class="text-gray-400 max-w-3xl mx-auto mb-10 text-sm md:text-xl leading-relaxed px-4" data-t="hero_desc">盟立集團將於SEMICON Taiwan 2026重磅展出創新的半導體 AI 智能自動化應用解決方案。</p>
+            <h1 class="text-4xl md:text-7xl font-black mb-4 md:mb-6 leading-tight text-white px-2"><span data-t="hero_title_1">智造未來</span><br><span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600" data-t="hero_title_2">半導體整廠自動化</span></h1>
+            <p class="text-gray-400 max-w-3xl mx-auto mb-10 text-sm md:text-xl px-4" data-t="hero_desc">盟立集團將於SEMICON Taiwan 2026重磅展出創新的半導體 AI 智能自動化應用解決方案。</p>
             <div class="flex justify-center gap-5 md:gap-12 mb-10">
-                <div class="text-center"><span id="days" class="text-4xl md:text-5xl font-bold">--</span><div class="text-[10px] text-gray-500 mt-1 uppercase tracking-widest" data-t="time_days">天數</div></div>
-                <div class="text-center border-l border-white/10 pl-5 md:pl-12"><span id="hours" class="text-4xl md:text-5xl font-bold">--</span><div class="text-[10px] text-gray-500 mt-1 uppercase tracking-widest" data-t="time_hours">時</div></div>
-                <div class="text-center border-l border-white/10 pl-5 md:pl-12"><span id="mins" class="text-4xl md:text-5xl font-bold">--</span><div class="text-[10px] text-gray-500 mt-1 uppercase tracking-widest" data-t="time_mins">分</div></div>
-                <div class="text-center border-l border-white/10 pl-5 md:pl-12 text-blue-500"><span id="secs" class="text-4xl md:text-5xl font-bold">--</span><div class="text-[10px] text-gray-500 mt-1 uppercase tracking-widest" data-t="time_secs">秒</div></div>
+                <div class="text-center"><span id="days" class="text-4xl md:text-5xl font-bold">--</span><div class="text-[10px] text-gray-500 mt-1 uppercase" data-t="time_days">天數</div></div>
+                <div class="text-center border-l border-white/10 pl-5 md:pl-12"><span id="hours" class="text-4xl md:text-5xl font-bold">--</span><div class="text-[10px] text-gray-500 mt-1 uppercase" data-t="time_hours">時</div></div>
+                <div class="text-center border-l border-white/10 pl-5 md:pl-12"><span id="mins" class="text-4xl md:text-5xl font-bold">--</span><div class="text-[10px] text-gray-500 mt-1 uppercase" data-t="time_mins">分</div></div>
+                <div class="text-center border-l border-white/10 pl-5 md:pl-12 text-blue-500"><span id="secs" class="text-4xl md:text-5xl font-bold">--</span><div class="text-[10px] text-gray-500 mt-1 uppercase" data-t="time_secs">秒</div></div>
             </div>
             <div class="flex flex-col sm:flex-row justify-center gap-4 px-6">
                 <a href="#" onclick="logClick('calendar_add')" class="bg-white text-black px-8 py-3 rounded-xl font-bold text-sm" data-t="btn_calendar">加入日曆</a>
                 <a href="https://www.semicontaiwan.org/" target="_blank" onclick="logClick('expo_register')" class="border border-white/20 text-white px-8 py-3 rounded-xl font-bold text-sm" data-t="btn_expo">大會觀展預約</a>
             </div>
         </div>
+        <div class="absolute inset-0 gradient-overlay pointer-events-none"></div>
     </header>
 
-    <!-- 展覽亮點 -->
+    <!-- 展覽亮點 (完整恢復) -->
     <section id="highlights" class="py-24 max-w-7xl mx-auto px-4 border-t border-white/5">
         <h2 class="text-3xl font-bold mb-16 text-center" data-t="highlights_title">2026 年度展覽亮點</h2>
-        <div class="grid md:grid-cols-4 gap-8">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             <div class="bg-white/5 p-0 rounded-3xl border border-white/10 card-hover overflow-hidden">
                 <img src="https://www.mirle.com.tw/upload/news_list_pic/twL_news_26A22_dbwMAARPWB.jpg" class="w-full h-48 object-cover">
                 <div class="p-6">
                     <div class="text-orange-500 text-xs font-bold mb-3 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-orange-500 animate-ping"></span> LIVE: 每整點演示</div>
-                    <h3 class="text-lg font-bold mb-2">巡檢機器人</h3>
+                    <h3 class="text-lg font-bold mb-2">人形機器人&巡檢機器狗</h3>
                     <p class="text-sm text-gray-400">自主導航與熱顯像感測，適用於無塵室環境監控。</p>
                 </div>
             </div>
-            <!-- ... 其他 3 個亮點卡片 (略) ... -->
+            <div class="bg-white/5 p-0 rounded-3xl border border-white/10 card-hover overflow-hidden">
+                <img src="https://www.mirle.com.tw/upload/news_b/twL_news_25I18_uIzJjga6iC.png" class="w-full h-48 object-cover">
+                <div class="p-6">
+                    <div class="bg-blue-500/20 text-blue-400 text-xs px-3 py-1 rounded-full inline-block font-bold mb-2">實機動態展示</div>
+                    <h3 class="text-lg font-bold mb-2">FOPLP EFEM</h3>
+                    <p class="text-sm text-gray-400">高精度晶圓搬運機器人，專為先進封裝製程設計。</p>
+                </div>
+            </div>
+            <div class="bg-white/5 p-0 rounded-3xl border border-white/10 card-hover overflow-hidden">
+                <img src="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=800" class="w-full h-48 object-cover">
+                <div class="p-6">
+                    <div class="bg-purple-500/20 text-purple-400 text-xs px-3 py-1 rounded-full inline-block font-bold mb-2">軟體互動區</div>
+                    <h3 class="text-lg font-bold mb-2">AI 維運平台</h3>
+                    <p class="text-sm text-gray-400">大數據預測維護，有效降低非計畫性停機。</p>
+                </div>
+            </div>
+            <div class="bg-white/5 p-0 rounded-3xl border border-white/10 card-hover overflow-hidden">
+                <img src="https://www.mirle.com.tw/upload/news_b/twL_news_24D19_uqRelVmTy5.png" class="w-full h-48 object-cover">
+                <div class="p-6">
+                    <div class="bg-emerald-500/20 text-emerald-400 text-xs px-3 py-1 rounded-full inline-block font-bold mb-2">核心組件展出</div>
+                    <h3 class="text-lg font-bold mb-2">盟英減速機</h3>
+                    <p class="text-sm text-gray-400">MIT 高精度運動控制核心。</p>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -217,7 +242,7 @@
                 </div>
                 <div class="aspect-video-container" id="sol-media-container">
                     <div id="video-placeholder" class="video-placeholder flex items-center justify-center cursor-pointer group" onclick="playVideo(); logClick('play_solution_video')">
-                        <img id="sol-thumb" src="" class="w-full h-full object-cover opacity-50 transition group-hover:scale-105">
+                        <img id="sol-thumb" src="" class="w-full h-full object-cover opacity-50 group-hover:scale-105 transition duration-500" alt="Thumb">
                         <div class="absolute w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center shadow-2xl"><i data-lucide="play" class="text-white fill-current w-10 h-10"></i></div>
                     </div>
                     <div id="iframe-container" class="hidden"></div>
@@ -226,7 +251,7 @@
         </div>
     </section>
 
-    <!-- 合展夥伴 -->
+    <!-- 合展夥伴牆 -->
     <section id="partners" class="py-24 text-center">
         <div class="max-w-7xl mx-auto px-4">
             <h2 class="text-3xl font-bold mb-16 tracking-widest uppercase" data-t="partners_title">盟立集團合展夥伴</h2>
@@ -255,7 +280,7 @@
         <div class="glow-divider my-20"></div>
         <h3 class="text-3xl font-bold mb-12 text-center" data-t="info_title">南港展覽館 展館交通指南</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-            <div class="h-[400px] rounded-[2rem] overflow-hidden border border-white/10 shadow-2xl">
+            <div class="h-[400px] rounded-[2rem] overflow-hidden border border-white/10 shadow-2xl relative group">
                 <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3614.3357559744877!2d121.61553561041396!3d25.05660673728927!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3442ab57f02092dd%3A0x87862fa2121f7e46!2z5Y-w5YyX5Y2X5riv5bGV6Ka96aSoMemkqA!5e0!3m2!1szh-TW!2stw!4v1773716785464" width="100%" height="100%" style="border:0;" allowfullscreen="" loading="lazy"></iframe>
             </div>
             <div class="grid gap-6">
@@ -263,11 +288,11 @@
                     <h5 class="font-bold text-white text-lg flex items-center gap-3"><i data-lucide="bus" class="text-blue-400"></i>公車 & 接駁 (Bus)</h5>
                     <p class="text-gray-400 text-sm" data-t="info_bus_desc">直達展館門口，展期大會提供免費接駁，<a href="https://www.semicontaiwan.org/zh/shuttlebus" target="_blank" onclick="logClick('bus_link')" class="text-blue-400 underline font-bold">詳細辦法</a>。</p>
                 </div>
-                <div class="traffic-card p-6 rounded-2xl border flex flex-col gap-4 text-xs">
+                <div class="traffic-card p-6 rounded-2xl border flex flex-col gap-4">
                     <h5 class="font-bold text-white text-lg flex items-center gap-3"><i data-lucide="car" class="text-blue-400"></i>自行開車 (Driving)</h5>
-                    <div class="text-gray-400 space-y-2" data-t="info_driving_desc">
-                        <p><strong class="text-blue-300">國道 1 號：</strong> 由東湖或內湖交流道下，接康寧路/成功路 → 南港。</p>
-                        <p><strong class="text-blue-300">國道 3 號：</strong> 由新台五路交流道下，接大同路 → 南港。</p>
+                    <div class="text-gray-400 text-xs space-y-2 text-left" data-t="info_driving_desc">
+                        <p><strong class="text-blue-300">國道 1 號：</strong> 東湖或內湖交流道下即可抵達。</p>
+                        <p><strong class="text-blue-300">國道 3 號：</strong> 新台五路交流道下即可抵達。展館提供 800 個車位。</p>
                     </div>
                 </div>
             </div>
@@ -300,7 +325,7 @@
                 logo_img: "https://www.mirle.com.tw/en/images/logo.png", catalog_url: "https://www.mirle.com.tw/download/0/M2026_EN/",
                 hero_location: "TaiNEX 1, 4F", hero_title_1: "Smart Future", hero_title_2: "Semiconductor Automation", hero_desc: "Mirle showcases innovation solutions at SEMICON Taiwan 2026.",
                 time_days: "Days", time_hours: "Hrs", time_mins: "Mins", time_secs: "Secs", btn_calendar: "Add Cal", btn_expo: "Register",
-                highlights_title: "Exhibition Highlights", highlights_subtitle: "Live demonstrations of technologies",
+                highlights_title: "2026 Exhibition Highlights", highlights_subtitle: "Live demonstrations of technologies",
                 sol_main_title: "Integrated Solutions", tab_foplp: "Adv. Pkg", tab_ai: "AI Mfg", tab_robot: "Robotics",
                 info_boothtitle: "Exhibition Info", info_title: "Nangang Traffic Guide",
                 wechat_modal_title: "Follow WeChat", wechat_modal_desc: "Scan for news",
@@ -320,8 +345,8 @@
         }
 
         const solutionData = {
-            zh: { foplp: { title: "FOPLP 先進封裝", desc: "高精度 AMR 搬運與倉儲系統。", list: ["震動抑制技術 < 0.05G"], thumb: "https://www.mirle.com.tw/upload/news_b/twL_news_25I18_uIzJjga6iC.png" }, ai: { title: "AI 智慧維運", desc: "演算法進行設備預測性維護。", list: ["即時異常偵測"], thumb: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1000" }, robot: { title: "機器人技術", desc: "整合高精密減速機實踐控制。", list: ["視覺導引抓取"], thumb: "https://www.mirle.com.tw/upload/news_b/twL_news_24D19_uqRelVmTy5.png" } },
-            en: { foplp: { title: "FOPLP Adv. Pkg", desc: "High-precision AMR storage.", list: ["Vibration control"], thumb: "https://www.mirle.com.tw/upload/news_b/twL_news_25I18_uIzJjga6iC.png" }, ai: { title: "AI O&M", desc: "Predictive maintenance systems.", list: ["Anomaly Detection"], thumb: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1000" }, robot: { title: "Robotics", desc: "Precision motion control.", list: ["Vision Guided"], thumb: "https://www.mirle.com.tw/upload/news_b/twL_news_24D19_uqRelVmTy5.png" } }
+            zh: { foplp: { title: "FOPLP 先進封裝", desc: "高精度 AMR 搬運與倉儲系統。", list: ["震動抑制技術 < 0.05G", "Class 1 潔淨室相容"], videoId: "8XHJGNxyzjc", thumb: "https://www.mirle.com.tw/upload/news_b/twL_news_25I18_uIzJjga6iC.png" }, ai: { title: "AI 智慧維運", desc: "演算法進行設備預測性維護。", list: ["即時異常偵測", "數位孿生模擬"], videoId: "pXW8i3P82gM", thumb: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1000" }, robot: { title: "機器人技術", desc: "整合高精密減速機實踐控制。", list: ["視覺導引抓取", "人機協作安全"], videoId: "dQw4w9WgXcQ", thumb: "https://www.mirle.com.tw/upload/news_b/twL_news_24D19_uqRelVmTy5.png" } },
+            en: { foplp: { title: "FOPLP Adv. Pkg", desc: "High-precision AMR storage.", list: ["Vibration control", "Cleanroom Compliance"], videoId: "8XHJGNxyzjc", thumb: "https://www.mirle.com.tw/upload/news_b/twL_news_25I18_uIzJjga6iC.png" }, ai: { title: "AI O&M", desc: "Predictive maintenance systems.", list: ["Anomaly Detection", "Digital Twin"], videoId: "pXW8i3P82gM", thumb: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1000" }, robot: { title: "Robotics", desc: "Precision motion control.", list: ["Vision Guided", "Collaborative Safety"], videoId: "dQw4w9WgXcQ", thumb: "https://www.mirle.com.tw/upload/news_b/twL_news_24D19_uqRelVmTy5.png" } }
         };
 
         function switchTab(id) {
@@ -338,10 +363,12 @@
         }
 
         function playVideo() {
+            const activeId = document.querySelector('.sol-tab.bg-blue-600')?.id?.replace('tab-', '') || 'foplp';
+            const videoId = solutionData[currentLang][activeId].videoId;
             document.getElementById('video-placeholder').classList.add('hidden');
             const c = document.getElementById('iframe-container');
             c.classList.remove('hidden');
-            c.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/8XHJGNxyzjc?autoplay=1" frameborder="0" allowfullscreen class="w-full h-full rounded-3xl"></iframe>`;
+            c.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0" frameborder="0" allowfullscreen class="w-full h-full rounded-3xl"></iframe>`;
         }
 
         function toggleWeChatModal(s) { document.getElementById('wechatModal').classList.toggle('active', s); }
@@ -354,11 +381,13 @@
         setInterval(() => {
             const now = new Date().getTime();
             const gap = targetDate - now;
-            const day = 1000 * 60 * 60 * 24;
-            document.getElementById("days").innerText = Math.floor(gap / day);
-            document.getElementById("hours").innerText = Math.floor((gap % day) / (1000 * 60 * 60));
-            document.getElementById("mins").innerText = Math.floor((gap % (1000 * 60 * 60)) / (1000 * 60));
-            document.getElementById("secs").innerText = Math.floor((gap % (1000 * 60)) / 1000);
+            const d = document.getElementById("days");
+            if (d) {
+                d.innerText = Math.floor(gap / (1000 * 60 * 60 * 24));
+                document.getElementById("hours").innerText = Math.floor((gap % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                document.getElementById("mins").innerText = Math.floor((gap % (1000 * 60 * 60)) / (1000 * 60));
+                document.getElementById("secs").innerText = Math.floor((gap % (1000 * 60)) / 1000);
+            }
         }, 1000);
     </script>
 </body>
